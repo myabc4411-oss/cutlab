@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CutLab — 영상 편집기</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Noto+Sans+KR:wght@300;400;500&display=swap');
+
+:root {
+  --bg:       #080810;
+  --s1:       #0f0f1a;
+  --s2:       #161625;
+  --border:   #1e1e35;
+  --accent:   #7c6cfa;
+  --accent2:  #fa6c8a;
+  --keep:     #3cffa0;
+  --cut:      #ff5f5f;
+  --in-col:   #ffd166;
+  --out-col:  #06d6a0;
+  --text:     #e0e0f0;
+  --muted:    #4a4a6a;
+  --bar-h:    16px;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Noto Sans KR', sans-serif;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ── 업로드 ── */
+#upload-screen {
+  flex:1; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:32px;
+  background: radial-gradient(ellipse at 50% 60%, #12102a 0%, var(--bg) 70%);
+}
+.upl-logo {
+  font-family: 'Syne', sans-serif;
+  font-size: 3rem; font-weight: 800;
+  letter-spacing: -0.04em;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.upl-sub { color: var(--muted); font-size:.9rem; letter-spacing:.08em; }
+.drop-zone {
+  width:480px; height:200px;
+  border: 1.5px dashed #2a2a45;
+  border-radius:20px;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:12px;
+  cursor:pointer; position:relative;
+  transition: border-color .2s, background .2s;
+}
+.drop-zone:hover, .drop-zone.drag {
+  border-color: var(--accent); background: #0f0f20;
+}
+.drop-zone input { position:absolute; inset:0; opacity:0; cursor:pointer; }
+.drop-icon { font-size:2.8rem; }
+.drop-label { font-size:.9rem; color:var(--muted); }
+.drop-note  { font-size:.72rem; color:#282840; font-family:'Syne',sans-serif; }
+
+/* ── 에디터 ── */
+#editor { flex:1; display:none; flex-direction:column; overflow:hidden; }
+
+/* 상단바 */
+#topbar {
+  display:flex; align-items:center; gap:0;
+  background: var(--s1);
+  border-bottom: 1px solid var(--border);
+  flex-shrink:0; height:44px;
+}
+.tb-logo {
+  font-family:'Syne',sans-serif; font-weight:800; font-size:1rem;
+  letter-spacing:-.02em; padding:0 18px;
+  background: linear-gradient(135deg,var(--accent),var(--accent2));
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  border-right:1px solid var(--border);
+  height:100%; display:flex; align-items:center;
+}
+.tb-info {
+  display:flex; align-items:center; gap:16px;
+  padding:0 18px; font-family:'Syne',sans-serif; font-size:.78rem;
+  height:100%; border-right:1px solid var(--border);
+}
+.tb-time   { color:var(--text); font-size:.9rem; }
+.tb-speed  { color:var(--accent); }
+.tb-file   { color:var(--muted); max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* 모드 토글 */
+.mode-wrap {
+  display:flex; align-items:center; gap:0;
+  margin-left:auto; height:100%;
+  border-left:1px solid var(--border);
+}
+.mode-btn {
+  padding:0 18px; height:100%; border:none; background:transparent;
+  font-family:'Syne',sans-serif; font-size:.78rem; font-weight:700;
+  cursor:pointer; transition:all .2s; letter-spacing:.02em;
+  color:var(--muted); opacity:.4;
+}
+.mode-btn.keep.active {
+  color:var(--keep); background:rgba(60,255,160,.12);
+  opacity:1; box-shadow: inset 0 -2px 0 var(--keep);
+}
+.mode-btn.cut.active {
+  color:var(--cut); background:rgba(255,95,95,.12);
+  opacity:1; box-shadow: inset 0 -2px 0 var(--cut);
+}
+.mode-btn:not(.active):hover { color:var(--text); opacity:.7; }
+
+/* 설정 버튼 */
+.tb-settings {
+  padding:0 16px; height:100%; border:none; background:transparent;
+  color:var(--muted); cursor:pointer; font-size:1.1rem;
+  border-left:1px solid var(--border);
+  transition:color .15s;
+}
+.tb-settings:hover { color:var(--text); }
+
+/* 마커 카운트 */
+.tb-counts {
+  padding:0 16px; display:flex; gap:12px;
+  font-family:'Syne',sans-serif; font-size:.75rem;
+  align-items:center; border-left:1px solid var(--border); height:100%;
+}
+.cnt { padding:2px 10px; border-radius:20px; font-weight:600; }
+.cnt.keep { background:rgba(60,255,160,.1); color:var(--keep); }
+.cnt.cut  { background:rgba(255,95,95,.1);  color:var(--cut); }
+
+/* 비디오 */
+#video-wrap {
+  flex:1; position:relative; background:#000;
+  display:flex; align-items:center; justify-content:center; min-height:0;
+}
+#video { max-width:100%; max-height:100%; display:block; }
+
+/* IN/OUT 오버레이 */
+#io-overlay {
+  position:absolute; top:14px; left:50%; transform:translateX(-50%);
+  display:flex; gap:10px; pointer-events:none;
+}
+.io-badge {
+  padding:4px 14px; border-radius:6px;
+  font-family:'Syne',sans-serif; font-size:.76rem; font-weight:700;
+  letter-spacing:.06em; display:none;
+}
+.io-badge.in  { background:rgba(255,209,102,.12); border:1px solid var(--in-col);  color:var(--in-col); }
+.io-badge.out { background:rgba(6,214,160,.12);   border:1px solid var(--out-col); color:var(--out-col); }
+
+/* 플래시 */
+#flash {
+  position:absolute; top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  font-family:'Syne',sans-serif; font-size:1.8rem; font-weight:800;
+  pointer-events:none; opacity:0; transition:opacity .08s;
+  text-shadow:0 2px 24px rgba(0,0,0,.9); white-space:nowrap;
+  letter-spacing:-.02em;
+}
+#flash.show { opacity:1; }
+
+/* ── 타임라인 ── */
+#tl-wrap {
+  background:var(--s1); border-top:1px solid var(--border);
+  padding:14px 18px 10px; flex-shrink:0;
+}
+#timeline {
+  position:relative; height:var(--bar-h);
+  background:#1a1a2e; border-radius:8px; cursor:pointer; overflow:visible;
+}
+#tl-bg-fill {
+  position:absolute; inset:0; border-radius:8px;
+  background: repeating-linear-gradient(
+    90deg, transparent 0px, transparent 49px, #1e1e35 49px, #1e1e35 50px
+  );
+}
+#tl-played {
+  position:absolute; left:0; top:0; bottom:0;
+  background:linear-gradient(90deg,var(--accent)40%,transparent);
+  opacity:.18; border-radius:8px; pointer-events:none;
+}
+.tl-region {
+  position:absolute; top:0; bottom:0;
+  pointer-events:none; border-radius:4px; opacity:.65;
+}
+#tl-cursor {
+  position:absolute; top:-6px;
+  width:3px; height:calc(var(--bar-h) + 12px);
+  background:#fff; border-radius:2px;
+  transform:translateX(-50%); pointer-events:none;
+  box-shadow:0 0 8px rgba(255,255,255,.4);
+}
+#tl-in-mark {
+  position:absolute; top:-8px;
+  width:3px; height:calc(var(--bar-h) + 16px);
+  background:var(--in-col); border-radius:2px;
+  transform:translateX(-50%); pointer-events:none;
+  display:none; box-shadow:0 0 8px rgba(255,209,102,.5);
+}
+#tl-out-mark {
+  position:absolute; top:-8px;
+  width:3px; height:calc(var(--bar-h) + 16px);
+  background:var(--out-col); border-radius:2px;
+  transform:translateX(-50%); pointer-events:none;
+  display:none; box-shadow:0 0 8px rgba(6,214,160,.5);
+}
+#tl-tooltip {
+  position:absolute; bottom:calc(var(--bar-h) + 10px);
+  background:#1a1a2e; border:1px solid var(--border);
+  border-radius:5px; padding:2px 10px;
+  font-family:'Syne',sans-serif; font-size:.68rem; color:var(--text);
+  pointer-events:none; display:none; transform:translateX(-50%);
+  white-space:nowrap;
+}
+
+/* ── 컨트롤바 ── */
+#ctrlbar {
+  display:flex; align-items:center; gap:6px;
+  padding:8px 18px 10px; background:var(--s1);
+  flex-shrink:0; flex-wrap:wrap;
+}
+.kb {
+  display:inline-flex; align-items:center; gap:6px;
+  font-family:'Syne',sans-serif; font-size:.7rem;
+  color:var(--muted); white-space:nowrap;
+}
+.key {
+  background:var(--s2); border:1px solid var(--border);
+  border-radius:4px; padding:2px 7px;
+  font-weight:700; color:var(--text); font-size:.72rem;
+}
+.ksep { width:1px; height:18px; background:var(--border); margin:0 4px; }
+.kb.mark-keep .key { border-color:var(--keep); color:var(--keep); }
+
+#btn-export {
+  margin-left:auto;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  border:none; border-radius:8px; padding:6px 18px;
+  font-family:'Syne',sans-serif; font-size:.78rem; font-weight:700;
+  color:#fff; cursor:pointer; letter-spacing:.04em;
+  transition:opacity .15s;
+}
+#btn-export:hover { opacity:.85; }
+
+/* ── 설정 패널 ── */
+#settings-panel {
+  display:none; position:fixed; inset:0; z-index:100;
+  background:rgba(8,8,16,.85); backdrop-filter:blur(8px);
+  align-items:center; justify-content:center;
+}
+#settings-panel.open { display:flex; }
+.sp-box {
+  background:var(--s1); border:1px solid var(--border);
+  border-radius:16px; width:520px; max-height:80vh;
+  overflow-y:auto; padding:28px;
+}
+.sp-title {
+  font-family:'Syne',sans-serif; font-size:1.1rem; font-weight:800;
+  margin-bottom:20px; color:var(--text);
+}
+.sp-section { margin-bottom:20px; }
+.sp-sec-title {
+  font-family:'Syne',sans-serif; font-size:.72rem; font-weight:700;
+  color:var(--muted); letter-spacing:.1em; text-transform:uppercase;
+  margin-bottom:10px;
+}
+.sp-row {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 0; border-bottom:1px solid var(--border);
+}
+.sp-row:last-child { border-bottom:none; }
+.sp-label { font-size:.85rem; color:var(--text); }
+.sp-desc  { font-size:.72rem; color:var(--muted); margin-top:2px; }
+.sp-key-input {
+  background:var(--s2); border:1px solid var(--border);
+  border-radius:6px; padding:4px 12px;
+  font-family:'Syne',sans-serif; font-size:.82rem; font-weight:700;
+  color:var(--accent); text-align:center; width:60px; cursor:pointer;
+  outline:none; text-transform:uppercase;
+}
+.sp-key-input.listening {
+  border-color:var(--accent); color:#fff;
+  box-shadow:0 0 0 2px rgba(124,108,250,.3);
+}
+.sp-key-input[readonly] { caret-color:transparent; }
+.sp-footer { display:flex; justify-content:flex-end; gap:10px; margin-top:20px; }
+.sp-btn {
+  padding:7px 20px; border-radius:8px;
+  font-family:'Syne',sans-serif; font-size:.8rem; font-weight:700;
+  cursor:pointer; border:1px solid var(--border);
+  background:transparent; color:var(--muted); transition:all .15s;
+}
+.sp-btn.primary {
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  border:none; color:#fff;
+}
+.sp-btn:hover { color:var(--text); border-color:#444; }
+
+/* ── EDL 목록 사이드 ── */
+#segments-panel {
+  position:absolute; right:0; top:0; bottom:0; width:220px;
+  background:rgba(15,15,26,.95); border-left:1px solid var(--border);
+  overflow-y:auto; padding:12px; display:none; flex-direction:column; gap:6px;
+  backdrop-filter:blur(4px);
+}
+#segments-panel.open { display:flex; }
+.seg-title {
+  font-family:'Syne',sans-serif; font-size:.72rem; font-weight:700;
+  color:var(--muted); letter-spacing:.08em; text-transform:uppercase;
+  margin-bottom:4px;
+}
+.seg-item {
+  background:var(--s2); border:1px solid var(--border);
+  border-radius:8px; padding:8px 10px; font-size:.72rem;
+  display:flex; align-items:center; justify-content:space-between;
+  gap:6px;
+}
+.seg-item .seg-type { font-family:'Syne',sans-serif; font-weight:700; font-size:.65rem; }
+.seg-item.keep .seg-type { color:var(--keep); }
+.seg-item.cut  .seg-type { color:var(--cut); }
+.seg-time { color:var(--muted); font-family:'Syne',sans-serif; font-size:.68rem; }
+.seg-del {
+  background:none; border:none; color:var(--muted);
+  cursor:pointer; font-size:.9rem; padding:0 2px; line-height:1;
+}
+.seg-del:hover { color:var(--cut); }
+
+/* 스크롤바 */
+::-webkit-scrollbar { width:4px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+</style>
+</head>
+<body>
+
+<!-- ── 업로드 ── -->
+<div id="upload-screen">
+  <div class="upl-logo">CutLab</div>
+  <div class="upl-sub">BROWSER-BASED VIDEO EDITOR</div>
+  <div class="drop-zone" id="drop-zone">
+    <input type="file" id="file-input" accept="video/*">
+    <div class="drop-icon">🎬</div>
+    <div class="drop-label">클릭하거나 영상 파일을 드래그하세요</div>
+    <div class="drop-note">MP4 · MOV · AVI · MKV</div>
+  </div>
+</div>
+
+<!-- ── 에디터 ── -->
+<div id="editor">
+
+  <!-- 상단바 -->
+  <div id="topbar">
+    <div class="tb-logo">CutLab</div>
+    <div class="tb-info">
+      <span class="tb-time"  id="tb-time">0:00.0 / 0:00.0</span>
+      <span class="tb-speed" id="tb-speed">x1.00</span>
+      <span class="tb-file"  id="tb-file"></span>
+    </div>
+
+    <div class="mode-wrap">
+      <div class="tb-counts">
+        <span class="cnt keep" id="cnt-keep">✂ 남길 구간: 0</span>
+        <span class="cnt cut"  id="cnt-cut">🗑 지울 구간: 0</span>
+      </div>
+      <button class="mode-btn keep active" id="mode-keep" title="선택 구간만 추출">✂ 남길 구간</button>
+      <button class="mode-btn cut"         id="mode-cut"  title="선택 구간만 삭제">🗑 지울 구간</button>
+      <button class="tb-settings" id="btn-settings" title="키보드 설정">⚙</button>
+    </div>
+  </div>
+
+  <!-- 비디오 -->
+  <div id="video-wrap">
+    <video id="video" preload="auto"></video>
+    <div id="io-overlay">
+      <div class="io-badge in"  id="badge-in">IN</div>
+      <div class="io-badge out" id="badge-out">OUT</div>
+    </div>
+    <div id="flash"></div>
+    <div id="segments-panel" id="seg-panel">
+      <div class="seg-title">마킹된 구간</div>
+      <div id="seg-list"></div>
+    </div>
+  </div>
+
+  <!-- 타임라인 -->
+  <div id="tl-wrap">
+    <div id="timeline">
+      <div id="tl-bg-fill"></div>
+      <div id="tl-played"></div>
+      <div id="tl-in-mark"></div>
+      <div id="tl-out-mark"></div>
+      <div id="tl-cursor"></div>
+      <div id="tl-tooltip"></div>
+    </div>
+  </div>
+
+  <!-- 컨트롤바 -->
+  <div id="ctrlbar">
+    <div class="kb"><span class="key" id="lbl-play">Space</span> 재생/정지</div>
+    <div class="kb"><span class="key" id="lbl-back">J</span> -3초</div>
+    <div class="kb"><span class="key" id="lbl-stop">K</span> 정지</div>
+    <div class="kb"><span class="key" id="lbl-fwd">L</span> +3초</div>
+    <div class="kb"><span class="key" id="lbl-slower">[</span><span class="key" id="lbl-faster">]</span> 배속</div>
+    <div class="ksep"></div>
+    <div class="kb"><span class="key" id="lbl-in">I</span> IN</div>
+    <div class="kb"><span class="key" id="lbl-out">O</span> OUT</div>
+    <div class="kb mark-keep"><span class="key" id="lbl-mark">Enter</span> 구간확정</div>
+    <div class="kb"><span class="key" id="lbl-undo">Z</span> 취소</div>
+    <div class="kb"><span class="key">Shift+<span id="lbl-redo">Z</span></span> 복구</div>
+    <div class="kb"><span class="key" id="lbl-list">Tab</span> 목록</div>
+    <button id="btn-export">💾 EDL 내보내기</button>
+  </div>
+
+</div>
+
+<!-- ── 설정 패널 ── -->
+<div id="settings-panel">
+  <div class="sp-box">
+    <div class="sp-title">⚙ 키보드 커스텀</div>
+
+    <div class="sp-section">
+      <div class="sp-sec-title">재생 컨트롤</div>
+      <div class="sp-row">
+        <div><div class="sp-label">재생 / 정지</div></div>
+        <input class="sp-key-input" data-action="play" readonly value="Space">
+      </div>
+      <div class="sp-row">
+        <div><div class="sp-label">뒤로 이동</div></div>
+        <input class="sp-key-input" data-action="back" readonly value="j">
+      </div>
+      <div class="sp-row">
+        <div><div class="sp-label">일시정지</div></div>
+        <input class="sp-key-input" data-action="stop" readonly value="k">
+      </div>
+      <div class="sp-row">
+        <div><div class="sp-label">앞으로 이동</div></div>
+        <input class="sp-key-input" data-action="fwd" readonly value="l">
+      </div>
+      <div class="sp-row">
+        <div><div class="sp-label">배속 내리기</div></div>
+        <input class="sp-key-input" data-action="slower" readonly value="[">
+      </div>
+      <div class="sp-row">
+        <div><div class="sp-label">배속 올리기</div></div>
+        <input class="sp-key-input" data-action="faster" readonly value="]">
+      </div>
+    </div>
+
+    <div class="sp-section">
+      <div class="sp-sec-title">편집</div>
+      <div class="sp-row">
+        <div><div class="sp-label">IN점 지정</div></div>
+        <input class="sp-key-input" data-action="in" readonly value="i">
+      </div>
+      <div class="sp-row">
+        <div><div class="sp-label">OUT점 지정</div></div>
+        <input class="sp-key-input" data-action="out" readonly value="o">
+      </div>
+      <div class="sp-row">
+        <div><div class="sp-label">구간 확정</div></div>
+        <input class="sp-key-input" data-action="mark" readonly value="Enter">
+      </div>
+      <div class="sp-row">
+        <div><div class="sp-label">마지막 취소</div></div>
+        <input class="sp-key-input" data-action="undo" readonly value="z">
+      </div>
+      <div class="sp-row">
+        <div><div class="sp-label">목록 토글</div></div>
+        <input class="sp-key-input" data-action="list" readonly value="Tab">
+      </div>
+    </div>
+
+    <div class="sp-footer">
+      <button class="sp-btn" id="sp-cancel">취소</button>
+      <button class="sp-btn primary" id="sp-save">저장</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==========================================
+// 키 설정 (기본값)
+// ==========================================
+let KEYS = {
+  play:   ' ',
+  back:   'j',
+  stop:   'k',
+  fwd:    'l',
+  slower: '[',
+  faster: ']',
+  in:     'i',
+  out:    'o',
+  mark:   'Enter',
+  undo:   'z',
+  list:   'Tab',
+};
+
+const SPEEDS    = [0.25, 0.5, 1.0, 1.5, 2.0, 4.0, 8.0];
+const SEEK_SEC  = 3;
+let speedIdx    = 2;
+
+// ==========================================
+// 상태
+// ==========================================
+let segments  = [];   // { in, out, mode: 'keep'|'cut' }
+let redoStack = [];   // undo된 항목 보관
+let pendingIn  = null;
+let pendingOut = null;
+let mode       = 'keep';   // 'keep' | 'cut'
+let duration   = 0;
+let fileName   = '';
+let flashTmr   = null;
+let listOpen   = false;
+
+// ==========================================
+// DOM
+// ==========================================
+const video      = document.getElementById('video');
+const fileInput  = document.getElementById('file-input');
+const dropZone   = document.getElementById('drop-zone');
+const uploadScr  = document.getElementById('upload-screen');
+const editor     = document.getElementById('editor');
+const timeline   = document.getElementById('timeline');
+const tlPlayed   = document.getElementById('tl-played');
+const tlCursor   = document.getElementById('tl-cursor');
+const tlInMark   = document.getElementById('tl-in-mark');
+const tlOutMark  = document.getElementById('tl-out-mark');
+const tlTooltip  = document.getElementById('tl-tooltip');
+const badgeIn    = document.getElementById('badge-in');
+const badgeOut   = document.getElementById('badge-out');
+const flashEl    = document.getElementById('flash');
+const segPanel   = document.getElementById('segments-panel');
+const segList    = document.getElementById('seg-list');
+const settPanel  = document.getElementById('settings-panel');
+
+// ==========================================
+// 업로드
+// ==========================================
+function loadFile(file) {
+  if (!file) return;
+  fileName = file.name;
+  video.src = URL.createObjectURL(file);
+  video.load();
+  video.onloadedmetadata = () => {
+    duration = video.duration;
+    uploadScr.style.display = 'none';
+    editor.style.display    = 'flex';
+    document.getElementById('tb-file').textContent = fileName;
+    video.playbackRate = SPEEDS[speedIdx];
+
+    // 같은 파일이면 세션 복구
+    const prevFn = sessionStorage.getItem('cutlab_filename');
+    if (prevFn === fileName) {
+      loadSession();
+      renderRegions(); renderSegList(); updateTopbar();
+      if (segments.length) flash(`↪ 이전 작업 복구됨 (${segments.length}개)`, 'var(--accent)');
+    } else {
+      sessionStorage.clear();
+      saveSession();
+    }
+
+    video.play();
+  };
+}
+fileInput.addEventListener('change', e => loadFile(e.target.files[0]));
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag');
+  loadFile(e.dataTransfer.files[0]);
+});
+
+// ==========================================
+// 세션 저장/복구
+// ==========================================
+function saveSession() {
+  try {
+    sessionStorage.setItem('cutlab_segments', JSON.stringify(segments));
+    sessionStorage.setItem('cutlab_mode',     mode);
+    sessionStorage.setItem('cutlab_filename', fileName);
+  } catch(e) {}
+}
+
+function loadSession() {
+  try {
+    const segs = sessionStorage.getItem('cutlab_segments');
+    const m    = sessionStorage.getItem('cutlab_mode');
+    const fn   = sessionStorage.getItem('cutlab_filename');
+    if (segs) segments = JSON.parse(segs);
+    if (m)    setMode(m);
+    if (fn)   sessionStorage.setItem('cutlab_filename', fn);
+    return fn || null;   // 이전 파일명 반환
+  } catch(e) { return null; }
+}
+
+
+document.getElementById('mode-keep').addEventListener('click', () => setMode('keep'));
+document.getElementById('mode-cut').addEventListener('click',  () => setMode('cut'));
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('mode-keep').classList.toggle('active', m === 'keep');
+  document.getElementById('mode-cut').classList.toggle('active',  m === 'cut');
+  flash(m === 'keep' ? '🟢 KEEP 모드' : '🔴 CUT 모드',
+        m === 'keep' ? 'var(--keep)' : 'var(--cut)');
+}
+
+// ==========================================
+// 타임라인
+// ==========================================
+function pct(t) { return duration ? t / duration * 100 : 0; }
+
+function updateTimeline() {
+  const p = pct(video.currentTime);
+  tlPlayed.style.width = p + '%';
+  tlCursor.style.left  = p + '%';
+
+  tlInMark.style.display  = pendingIn  !== null ? 'block' : 'none';
+  tlOutMark.style.display = pendingOut !== null ? 'block' : 'none';
+  if (pendingIn  !== null) tlInMark.style.left  = pct(pendingIn)  + '%';
+  if (pendingOut !== null) tlOutMark.style.left = pct(pendingOut) + '%';
+
+  badgeIn.style.display  = pendingIn  !== null ? 'block' : 'none';
+  badgeOut.style.display = pendingOut !== null ? 'block' : 'none';
+  if (pendingIn  !== null) badgeIn.textContent  = `IN  ${fmtSec(pendingIn)}`;
+  if (pendingOut !== null) badgeOut.textContent = `OUT ${fmtSec(pendingOut)}`;
+}
+
+function renderRegions() {
+  document.querySelectorAll('.tl-region').forEach(el => el.remove());
+  for (const seg of segments) {
+    const el = document.createElement('div');
+    el.className = 'tl-region';
+    el.style.left       = pct(seg.in) + '%';
+    el.style.width      = pct(seg.out - seg.in) + '%';
+    el.style.background = seg.mode === 'keep' ? 'var(--keep)' : 'var(--cut)';
+    timeline.appendChild(el);
+  }
+}
+
+// 마우스
+let tlDrag = false;
+function seekMouse(e) {
+  const r = timeline.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+  video.currentTime = ratio * duration;
+}
+timeline.addEventListener('mousedown', e => { tlDrag = true; seekMouse(e); video.pause(); });
+document.addEventListener('mousemove', e => {
+  if (tlDrag) seekMouse(e);
+  const r = timeline.getBoundingClientRect();
+  if (e.clientY >= r.top - 12 && e.clientY <= r.bottom + 12) {
+    const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    tlTooltip.style.display = 'block';
+    tlTooltip.style.left    = (e.clientX - r.left) + 'px';
+    tlTooltip.textContent   = fmtSec(ratio * duration);
+  } else {
+    tlTooltip.style.display = 'none';
+  }
+});
+document.addEventListener('mouseup', () => { tlDrag = false; });
+
+// ==========================================
+// UI 업데이트
+// ==========================================
+function fmtSec(s) {
+  s = Math.max(0, s);
+  const m = Math.floor(s / 60);
+  return `${m}:${(s % 60).toFixed(1).padStart(4,'0')}`;
+}
+
+function updateTopbar() {
+  document.getElementById('tb-time').textContent =
+    `${fmtSec(video.currentTime)} / ${fmtSec(duration)}`;
+  document.getElementById('tb-speed').textContent =
+    `x${SPEEDS[speedIdx].toFixed(2)}`;
+  const keeps = segments.filter(s => s.mode === 'keep').length;
+  const cuts  = segments.filter(s => s.mode === 'cut').length;
+  document.getElementById('cnt-keep').textContent = `✂ 남길 구간: ${keeps}`;
+  document.getElementById('cnt-cut').textContent  = `🗑 지울 구간: ${cuts}`;
+}
+
+video.addEventListener('timeupdate', () => { updateTopbar(); updateTimeline(); });
+
+// ==========================================
+// 플래시
+// ==========================================
+function flash(msg, color) {
+  flashEl.textContent = msg;
+  flashEl.style.color = color || '#fff';
+  flashEl.classList.add('show');
+  if (flashTmr) clearTimeout(flashTmr);
+  flashTmr = setTimeout(() => flashEl.classList.remove('show'), 850);
+}
+
+// ==========================================
+// 세그먼트 목록 렌더
+// ==========================================
+function renderSegList() {
+  segList.innerHTML = '';
+  segments.forEach((seg, i) => {
+    const el = document.createElement('div');
+    el.className = `seg-item ${seg.mode}`;
+    el.innerHTML = `
+      <div>
+        <div class="seg-type">${seg.mode.toUpperCase()}</div>
+        <div class="seg-time">${fmtSec(seg.in)} → ${fmtSec(seg.out)}</div>
+      </div>
+      <button class="seg-del" data-i="${i}">✕</button>
+    `;
+    segList.appendChild(el);
+  });
+  segList.querySelectorAll('.seg-del').forEach(btn => {
+    btn.addEventListener('click', () => {
+      segments.splice(+btn.dataset.i, 1);
+      renderRegions(); renderSegList(); updateTopbar();
+      saveSession();
+    });
+  });
+}
+
+// ==========================================
+// 편집 액션
+// ==========================================
+function setIn() {
+  pendingIn = video.currentTime;
+  flash(`📍 IN  ${fmtSec(pendingIn)}`, 'var(--in-col)');
+  updateTimeline();
+}
+
+function setOut() {
+  pendingOut = video.currentTime;
+  flash(`📍 OUT  ${fmtSec(pendingOut)}`, 'var(--out-col)');
+  updateTimeline();
+}
+
+function confirmSegment() {
+  let inT  = pendingIn;
+  let outT = pendingOut !== null ? pendingOut : video.currentTime;
+  if (inT === null) { flash('IN점을 먼저 지정하세요  (I)', '#f88'); return; }
+  if (outT <= inT) { flash('OUT이 IN보다 앞에 있어요', '#f88'); return; }
+  segments.push({ in: inT, out: outT, mode });
+  redoStack = [];
+  pendingIn = pendingOut = null;
+  renderRegions(); renderSegList(); updateTopbar();
+  saveSession();
+  flash(
+    mode === 'keep'
+      ? `🟢 KEEP  ${fmtSec(inT)} → ${fmtSec(outT)}`
+      : `🔴 CUT   ${fmtSec(inT)} → ${fmtSec(outT)}`,
+    mode === 'keep' ? 'var(--keep)' : 'var(--cut)'
+  );
+  updateTimeline();
+}
+
+function undo() {
+  if (!segments.length && pendingIn === null) {
+    flash('취소할 항목 없음', '#666'); return;
+  }
+  if (pendingOut !== null) { pendingOut = null; updateTimeline(); flash('OUT 취소', '#aaa'); return; }
+  if (pendingIn  !== null) { pendingIn  = null; updateTimeline(); flash('IN 취소', '#aaa'); return; }
+  const removed = segments.pop();
+  redoStack.push(removed);
+  renderRegions(); renderSegList(); updateTopbar();
+  saveSession();
+  flash('↩ 취소됨', '#aaa');
+}
+
+function redo() {
+  if (!redoStack.length) { flash('되돌릴 항목 없음', '#666'); return; }
+  const seg = redoStack.pop();
+  segments.push(seg);
+  renderRegions(); renderSegList(); updateTopbar();
+  saveSession();
+  flash('↪ 복구됨', 'var(--accent)');
+}
+
+function toggleList() {
+  listOpen = !listOpen;
+  segPanel.classList.toggle('open', listOpen);
+}
+
+// ==========================================
+// 키보드
+// ==========================================
+document.addEventListener('keydown', e => {
+  if (uploadScr.style.display !== 'none') return;
+  if (settPanel.classList.contains('open')) return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+  const k = e.key;
+  if (k === KEYS.play)   { e.preventDefault(); video.paused ? video.play() : video.pause(); }
+  else if (k === KEYS.back)   { e.preventDefault(); video.currentTime = Math.max(0, video.currentTime - SEEK_SEC); flash(`◀ -${SEEK_SEC}s`,'#666'); }
+  else if (k === KEYS.stop)   { e.preventDefault(); video.pause(); }
+  else if (k === KEYS.fwd)    { e.preventDefault(); video.currentTime = Math.min(duration, video.currentTime + SEEK_SEC); flash(`▶ +${SEEK_SEC}s`,'#666'); }
+  else if (k === KEYS.slower) { e.preventDefault(); speedIdx = Math.max(0, speedIdx-1); video.playbackRate = SPEEDS[speedIdx]; flash(`x${SPEEDS[speedIdx].toFixed(2)}`,'var(--accent)'); updateTopbar(); }
+  else if (k === KEYS.faster) { e.preventDefault(); speedIdx = Math.min(SPEEDS.length-1,speedIdx+1); video.playbackRate = SPEEDS[speedIdx]; flash(`x${SPEEDS[speedIdx].toFixed(2)}`,'var(--accent)'); updateTopbar(); }
+  else if (k === KEYS.in)     { e.preventDefault(); setIn(); }
+  else if (k === KEYS.out)    { e.preventDefault(); setOut(); }
+  else if (k === KEYS.mark)   { e.preventDefault(); confirmSegment(); }
+  else if (k === KEYS.undo && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if (k === KEYS.undo &&  e.shiftKey) { e.preventDefault(); redo(); }
+  else if (k === KEYS.list)   { e.preventDefault(); toggleList(); }
+});
+
+// ==========================================
+// 내보내기
+// ==========================================
+document.getElementById('btn-export').addEventListener('click', exportEDL);
+
+function toTC(sec, fps) {
+  sec = Math.max(0, sec);
+  const totalF = Math.round(sec * fps);
+  const f = totalF % Math.round(fps);
+  const s = Math.floor(totalF / Math.round(fps)) % 60;
+  const m = Math.floor(totalF / Math.round(fps) / 60) % 60;
+  const h = Math.floor(totalF / Math.round(fps) / 3600);
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}:${String(f).padStart(2,'0')}`;
+}
+
+function buildEDL(segs, title, fps) {
+  let lines = [`TITLE: ${title}`, 'FCM: NON-DROP FRAME', ''];
+  let recIn = 0;
+  segs.forEach((seg, i) => {
+    const dur = seg.out - seg.in;
+    lines.push(
+      `${String(i+1).padStart(3,'0')}  AX  V  C  ` +
+      `${toTC(seg.in, fps)} ${toTC(seg.out, fps)} ` +
+      `${toTC(recIn, fps)} ${toTC(recIn + dur, fps)}`
+    );
+    lines.push(`* FROM CLIP NAME: ${fileName}`);
+    lines.push('');
+    recIn += dur;
+  });
+  return lines.join('\n');
+}
+
+function downloadText(content, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], { type:'text/plain' }));
+  a.download = name;
+  a.click();
+}
+
+function exportEDL() {
+  if (!segments.length) { flash('마킹된 구간이 없습니다', '#f88'); return; }
+  const fps   = 59.94;
+  const keeps = segments.filter(s => s.mode === 'keep');
+  const cuts  = segments.filter(s => s.mode === 'cut');
+  if (keeps.length) downloadText(buildEDL(keeps, 'CUTLAB_KEEP', fps), 'cutlab_keep.edl');
+  setTimeout(() => {
+    if (cuts.length) downloadText(buildEDL(cuts, 'CUTLAB_CUT', fps), 'cutlab_cut.edl');
+  }, 300);
+  flash(`💾 저장  KEEP:${keeps.length}  CUT:${cuts.length}`, 'var(--accent)');
+}
+
+// ==========================================
+// 설정 패널
+// ==========================================
+document.getElementById('btn-settings').addEventListener('click', openSettings);
+document.getElementById('sp-cancel').addEventListener('click', () => {
+  document.querySelectorAll('.sp-key-input').forEach(i => i.classList.remove('listening'));
+  if (_keyHandler) { document.removeEventListener('keydown', _keyHandler); _keyHandler = null; }
+  settPanel.classList.remove('open');
+});
+document.getElementById('sp-save').addEventListener('click', saveSettings);
+
+function openSettings() {
+  document.querySelectorAll('.sp-key-input').forEach(inp => {
+    const v = KEYS[inp.dataset.action];
+    inp.value = v === ' ' ? 'Space' : v === 'Enter' ? 'Enter' : v === 'Tab' ? 'Tab' : v.toUpperCase();
+  });
+  settPanel.classList.add('open');
+  setupKeyListeners();
+}
+
+let _keyHandler = null;
+
+function setupKeyListeners() {
+  // 이전 핸들러 제거
+  if (_keyHandler) document.removeEventListener('keydown', _keyHandler);
+
+  document.querySelectorAll('.sp-key-input').forEach(inp => {
+    inp.addEventListener('click', () => {
+      document.querySelectorAll('.sp-key-input').forEach(i => i.classList.remove('listening'));
+      inp.classList.add('listening');
+      inp.value = '키를 누르세요...';
+    });
+  });
+
+  _keyHandler = function(e) {
+    if (!settPanel.classList.contains('open')) return;
+    const listening = document.querySelector('.sp-key-input.listening');
+    if (!listening) return;
+    e.preventDefault(); e.stopPropagation();
+    const display = e.key === ' ' ? 'Space' : e.key === 'Enter' ? 'Enter' : e.key === 'Tab' ? 'Tab' : e.key.toUpperCase();
+    listening.value = display;
+    listening.dataset.pending = e.key;
+    listening.classList.remove('listening');
+  };
+  document.addEventListener('keydown', _keyHandler);
+}
+
+function saveSettings() {
+  document.querySelectorAll('.sp-key-input').forEach(inp => {
+    const raw = inp.dataset.pending || inp.value;
+    KEYS[inp.dataset.action] = raw === 'Space' ? ' ' : raw === 'SPACE' ? ' ' : raw.length === 1 ? raw.toLowerCase() : raw;
+    delete inp.dataset.pending;
+  });
+  bPre  = 3;
+  bPost = 2;
+  if (_keyHandler) { document.removeEventListener('keydown', _keyHandler); _keyHandler = null; }
+  updateCtrlLabels();
+  settPanel.classList.remove('open');
+  flash('✅ 설정 저장됨', 'var(--accent)');
+}
+
+function updateCtrlLabels() {
+  const fmt = k => k === ' ' ? 'Space' : k === 'Enter' ? 'Enter' : k === 'Tab' ? 'Tab' : k.toUpperCase();
+  document.getElementById('lbl-play').textContent   = fmt(KEYS.play);
+  document.getElementById('lbl-back').textContent   = fmt(KEYS.back);
+  document.getElementById('lbl-stop').textContent   = fmt(KEYS.stop);
+  document.getElementById('lbl-fwd').textContent    = fmt(KEYS.fwd);
+  document.getElementById('lbl-slower').textContent = fmt(KEYS.slower);
+  document.getElementById('lbl-faster').textContent = fmt(KEYS.faster);
+  document.getElementById('lbl-in').textContent     = fmt(KEYS.in);
+  document.getElementById('lbl-out').textContent    = fmt(KEYS.out);
+  document.getElementById('lbl-mark').textContent   = fmt(KEYS.mark);
+  document.getElementById('lbl-undo').textContent   = fmt(KEYS.undo);
+  document.getElementById('lbl-list').textContent   = fmt(KEYS.list);
+}
+</script>
+</body>
+</html>
