@@ -559,8 +559,27 @@ function loadFile(file) {
     const prevFn = sessionStorage.getItem('cutlab_filename');
     if (prevFn === fileName) {
       loadSession();
+
+      // ★ 안전장치: 파일명이 같아도 실제 영상 길이가 다르면(재촬영/재저장 등)
+      // 과거 세그먼트의 OUT 지점이 새 영상 길이를 벗어날 수 있음.
+      // → 이런 세그먼트는 잘못된 EDL(예: DaVinci Resolve "timecode extents
+      //   do not match" 에러)을 만들어내므로 자동으로 걸러낸다.
+      const before = segments.length;
+      segments = segments.filter(s => s.out <= duration + 0.05); // 부동소수점 오차 허용
+      const removed = before - segments.length;
+
+      // pending IN/OUT 포인트도 새 길이를 벗어나면 초기화
+      if (pendingIn  !== null && pendingIn  > duration) pendingIn  = null;
+      if (pendingOut !== null && pendingOut > duration) pendingOut = null;
+
       renderRegions(); renderSegList(); updateTopbar();
-      if (segments.length) flash(`↪ 이전 작업 복구됨 (${segments.length}개)`, 'var(--accent)');
+
+      if (removed > 0) {
+        flash(`⚠ 영상 길이 불일치로 ${removed}개 구간 제거됨`, '#f88');
+        saveSession(); // 걸러진 상태를 다시 저장해 다음 로드 때 재사용
+      } else if (segments.length) {
+        flash(`↪ 이전 작업 복구됨 (${segments.length}개)`, 'var(--accent)');
+      }
     } else {
       sessionStorage.clear();
       saveSession();
@@ -851,6 +870,15 @@ function downloadText(content, name) {
 
 function exportEDL() {
   if (!segments.length) { flash('마킹된 구간이 없습니다', '#f88'); return; }
+
+  // ★ 안전장치: export 직전에도 한 번 더 검증 — 현재 로드된 영상 길이를
+  // 벗어나는 세그먼트가 있으면 export를 막고 알려준다.
+  const invalid = segments.filter(s => s.out > duration + 0.05);
+  if (invalid.length) {
+    flash(`⚠ 영상 길이를 벗어난 구간 ${invalid.length}개가 있어 저장할 수 없습니다`, '#f88');
+    return;
+  }
+
   const fps   = 59.94;
   const keeps = segments.filter(s => s.mode === 'keep');
   const cuts  = segments.filter(s => s.mode === 'cut');
